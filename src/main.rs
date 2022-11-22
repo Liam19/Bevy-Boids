@@ -28,7 +28,7 @@ fn main() {
     }))
 
     .register_type::<Settings>()
-    .register_type::<Direction>()
+    .register_type::<Velocity>()
 
     .insert_resource(Settings::default())
     
@@ -74,30 +74,34 @@ fn spawn_boids(
             transform: Transform::from_xyz(pos_x, pos_y, 0.0),
             ..default()
         })
-        .insert(Direction(Vec2::new(dir_x, dir_y).normalize()));
+        .insert(Velocity(Vec2::new(dir_x, dir_y).normalize()));
     }
 }
 
 fn flocking_system(
-    mut query: Query<(&GlobalTransform, &mut Direction)>,
+    mut query: Query<(&GlobalTransform, &mut Velocity)>,
+    mut velocities : Query<&mut Velocity>,
     time: Res<Time>,
     settings: Res<Settings>,
 ) {
     let average_dir = Vec2::new(0.0, 0.0);
     let mut combinations = query.iter_combinations_mut();
-    while let Some([(t1, mut dir1), (t2, dir2)]) = combinations.fetch_next() {
+    while let Some([(t1, mut v1), (t2, v2)]) = combinations.fetch_next() {
         if t1.translation().distance(t2.translation()) < settings.vision_distance {
             // Cohesion
-            dir1.0 = dir1.0.rotate(Vec2::from_angle(t1.translation().angle_between(t2.translation()) * time.delta_seconds() * settings.alignment));
-
+            v1.0 = v1.0.rotate(Vec2::from_angle(t1.translation().angle_between(t2.translation()) * time.delta_seconds() * settings.alignment));
             // Alignment
-            dir1.0 = dir1.0.rotate(Vec2::from_angle(dir1.0.angle_between(dir2.0) * time.delta_seconds() * settings.alignment));
+            v1.0 += v2.0 * time.delta_seconds() * settings.alignment
         }
     }
+    for mut velocity in &mut velocities {
+        velocity.0 = velocity.0.normalize();
+    }
+
 }
 
 fn resize_system(
-    mut objects: Query<&mut Transform, With<Direction>>,
+    mut objects: Query<&mut Transform, With<Velocity>>,
     settings: Res<Settings>
 ) {
     for mut transform in &mut objects {
@@ -107,7 +111,7 @@ fn resize_system(
 }
 
 fn movement_system(
-    mut objects: Query<(&Direction, &mut Transform)>,
+    mut objects: Query<(&Velocity, &mut Transform)>,
     time: Res<Time>,
     settings: Res<Settings>
 ){
@@ -120,7 +124,7 @@ fn movement_system(
 }
 
 fn wrap_borders_system(
-    mut objects: Query<&mut Transform, With<Direction>>,
+    mut objects: Query<&mut Transform, With<Velocity>>,
     windows: ResMut<Windows>
 ) {
     let window = windows.get_primary().unwrap();
@@ -170,7 +174,7 @@ impl Default for Settings {
 
 #[derive(Reflect, Clone, Component, Inspectable, Default)]
 #[reflect(Component)] //Component has a transform
-pub struct Direction(Vec2);
+pub struct Velocity(Vec2);
 
 
 
