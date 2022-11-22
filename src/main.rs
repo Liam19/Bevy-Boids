@@ -28,7 +28,7 @@ fn main() {
     }))
 
     .register_type::<Settings>()
-    .register_type::<Velocity>()
+    .register_type::<Boid>()
 
     .insert_resource(Settings::default())
     
@@ -74,57 +74,50 @@ fn spawn_boids(
             transform: Transform::from_xyz(pos_x, pos_y, 0.0),
             ..default()
         })
-        .insert(Velocity(Vec2::new(dir_x, dir_y).normalize()));
+        .insert(Boid {
+            alignment: Vec2::new(dir_x, dir_y).normalize(),
+            velocity: Vec2::new(dir_x, dir_y).normalize(),
+            ..default()
+        });
     }
 }
 
 fn flocking_system(
-    mut query: Query<(&GlobalTransform, &mut Velocity)>,
-    mut velocities : Query<&mut Velocity>,
+    mut query: Query<(&GlobalTransform, &mut Boid)>,
     time: Res<Time>,
     settings: Res<Settings>,
 ) {
-    let average_dir = Vec2::new(0.0, 0.0);
     let mut combinations = query.iter_combinations_mut();
-    while let Some([(t1, mut v1), (t2, v2)]) = combinations.fetch_next() {
+    while let Some([(t1, mut boid1), (t2, boid2)]) = combinations.fetch_next() {
         if t1.translation().distance(t2.translation()) < settings.vision_distance {
-            // Cohesion
-            v1.0 = v1.0.rotate(Vec2::from_angle(t1.translation().angle_between(t2.translation()) * time.delta_seconds() * settings.alignment));
-            // Alignment
-            v1.0 += v2.0 * time.delta_seconds() * settings.alignment
+            //boid1.cohesion += t2 - 
+            boid1.alignment += boid2.velocity 
         }
-    }
-    for mut velocity in &mut velocities {
-        velocity.0 = velocity.0.normalize();
-    }
-
-}
-
-fn resize_system(
-    mut objects: Query<&mut Transform, With<Velocity>>,
-    settings: Res<Settings>
-) {
-    for mut transform in &mut objects {
-        transform.scale.x = settings.size;
-        transform.scale.y = settings.size;
     }
 }
 
 fn movement_system(
-    mut objects: Query<(&Velocity, &mut Transform)>,
+    mut objects: Query<(&mut Boid, &mut Transform)>,
     time: Res<Time>,
     settings: Res<Settings>
-){
+) {
     if !settings.paused {
-        for (direction, mut transform) in &mut objects {
-            transform.translation.x += direction.0.x * time.delta_seconds() * settings.move_speed;
-            transform.translation.y += direction.0.y * time.delta_seconds() * settings.move_speed;
+        for (mut boid, mut transform) in &mut objects {
+            boid.velocity = boid.velocity +
+                (boid.alignment * settings.separation) +
+                (boid.alignment * settings.cohesion) +
+                (boid.alignment * settings.alignment)
+            ;
+            transform.translation = transform.translation.lerp(
+                boid.velocity.extend(0.0) * settings.move_speed,
+                time.delta_seconds()
+            );
         }
     }
 }
 
 fn wrap_borders_system(
-    mut objects: Query<&mut Transform, With<Velocity>>,
+    mut objects: Query<&mut Transform, With<Boid>>,
     windows: ResMut<Windows>
 ) {
     let window = windows.get_primary().unwrap();
@@ -145,6 +138,16 @@ fn wrap_borders_system(
     }
 }
 
+fn resize_system(
+    mut objects: Query<&mut Transform, With<Boid>>,
+    settings: Res<Settings>
+) {
+    for mut transform in &mut objects {
+        transform.scale.x = settings.size;
+        transform.scale.y = settings.size;
+    }
+}
+
 #[derive(Reflect, Resource, Inspectable)]
 pub struct Settings {
     move_speed: f32,
@@ -160,22 +163,48 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            move_speed: 100.0,
+            move_speed: 50.0,
             vision_distance: 100.0,
             size: 1.0,
             separation: 0.0,
             cohesion: 0.0,
-            alignment: 0.0,
+            alignment: 0.1,
             boid_count: 100,
             paused: false
         }
     }
 }
 
-#[derive(Reflect, Clone, Component, Inspectable, Default)]
+#[derive(Reflect, Clone, Component, Inspectable)]
 #[reflect(Component)] //Component has a transform
-pub struct Velocity(Vec2);
+pub struct Boid {
+    velocity: Vec2,
+    separation: Vec2,
+    cohesion: Vec2,
+    alignment: Vec2,
+}
 
+impl Default for Boid {
+    fn default() -> Self {
+        Self {
+            separation: Vec2::Y,
+            cohesion: Vec2::Y,
+            alignment: Vec2::Y,
+            velocity: Vec2::Y
+        }
+    }
+}
 
+impl Boid {
+    fn target_velocity (
+        &self,
+        separation: f32,
+        cohesion: f32,
+        alignment: f32,
+    ) -> Vec2 {
+        let result = self.separation * separation + self.cohesion * cohesion + self.alignment.normalize() * alignment;
+        result.normalize()
+    }
+}
 
 
