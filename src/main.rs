@@ -75,7 +75,7 @@ fn spawn_boids(
             ..default()
         })
         .insert(Boid {
-            alignment: Vec2::new(dir_x, dir_y).normalize(),
+            //alignment: Vec2::new(dir_x, dir_y).normalize(),
             velocity: Vec2::new(dir_x, dir_y).normalize(),
             ..default()
         });
@@ -103,15 +103,22 @@ fn movement_system(
 ) {
     if !settings.paused {
         for (mut boid, mut transform) in &mut objects {
-            boid.velocity = boid.velocity +
-                (boid.alignment * settings.separation) +
-                (boid.alignment * settings.cohesion) +
-                (boid.alignment * settings.alignment)
-            ;
-            transform.translation = transform.translation.lerp(
-                boid.velocity.extend(0.0) * settings.move_speed,
-                time.delta_seconds()
-            );
+
+            /* 
+            - all boid values are the same as last frame
+            - 
+            */
+
+            if boid.alignment.length() * settings.alignment != 0.0 {
+                boid.velocity = boid.velocity.lerp(boid.alignment.normalize(), time.delta_seconds() * settings.alignment / 10.0);
+            } 
+
+
+            //boid.velocity = (boid.alignment - boid.velocity) * settings.alignment;
+            
+            // dont touch
+            transform.translation += boid.velocity.extend(0.0) * time.delta_seconds() * settings.move_speed;
+            boid.reset();
         }
     }
 }
@@ -163,12 +170,12 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            move_speed: 50.0,
+            move_speed: 100.0,
             vision_distance: 100.0,
             size: 1.0,
             separation: 0.0,
             cohesion: 0.0,
-            alignment: 0.1,
+            alignment: 1.0,
             boid_count: 100,
             paused: false
         }
@@ -178,10 +185,10 @@ impl Default for Settings {
 #[derive(Reflect, Clone, Component, Inspectable)]
 #[reflect(Component)] //Component has a transform
 pub struct Boid {
-    velocity: Vec2,
     separation: Vec2,
     cohesion: Vec2,
     alignment: Vec2,
+    velocity: Vec2,
 }
 
 impl Default for Boid {
@@ -196,6 +203,14 @@ impl Default for Boid {
 }
 
 impl Boid {
+    fn reset(
+        &mut self,
+    ) {
+        self.cohesion = Vec2::ZERO;
+        self.separation = Vec2::ZERO;
+        self.alignment = Vec2::ZERO;
+    }
+
     fn target_velocity (
         &self,
         separation: f32,
