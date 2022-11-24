@@ -90,34 +90,33 @@ fn flocking_system(
     let mut combinations = query.iter_combinations_mut();
     while let Some([(t1, mut boid1), (t2, boid2)]) = combinations.fetch_next() {
         if t1.translation().distance(t2.translation()) < settings.vision_distance {
-            //boid1.cohesion += t2 - 
+            boid1.neighbour_count += 1.0;
+            
+            boid1.cohesion += t2.translation().truncate();
             boid1.alignment += boid2.velocity 
         }
     }
 }
 
 fn movement_system(
-    mut objects: Query<(&mut Boid, &mut Transform)>,
+    mut objects: Query<(&mut Boid, &mut Transform, &GlobalTransform)>,
     time: Res<Time>,
-    settings: Res<Settings>
+    settings: Res<Settings>,
 ) {
     if !settings.paused {
-        for (mut boid, mut transform) in &mut objects {
+        for (mut boid, mut transform, global_transform) in &mut objects {
 
-            /* 
-            - all boid values are the same as last frame
-            - 
-            */
-
+            if boid.cohesion.length() * settings.cohesion != 0.0 {
+                let tgt_vec = (boid.cohesion / boid.neighbour_count) - global_transform.translation().truncate();
+                boid.velocity = boid.velocity.lerp(tgt_vec, time.delta_seconds() * settings.cohesion / 10.0)
+            }
+            
             if boid.alignment.length() * settings.alignment != 0.0 {
                 boid.velocity = boid.velocity.lerp(boid.alignment.normalize(), time.delta_seconds() * settings.alignment / 10.0);
-            } 
-
-
-            //boid.velocity = (boid.alignment - boid.velocity) * settings.alignment;
+            }
             
             // dont touch
-            transform.translation += boid.velocity.extend(0.0) * time.delta_seconds() * settings.move_speed;
+            transform.translation += boid.velocity.extend(0.0).normalize() * time.delta_seconds() * settings.move_speed;
             boid.reset();
         }
     }
@@ -189,6 +188,7 @@ pub struct Boid {
     cohesion: Vec2,
     alignment: Vec2,
     velocity: Vec2,
+    neighbour_count: f32,
 }
 
 impl Default for Boid {
@@ -197,7 +197,8 @@ impl Default for Boid {
             separation: Vec2::Y,
             cohesion: Vec2::Y,
             alignment: Vec2::Y,
-            velocity: Vec2::Y
+            velocity: Vec2::Y,
+            neighbour_count: 0.0,
         }
     }
 }
@@ -209,16 +210,7 @@ impl Boid {
         self.cohesion = Vec2::ZERO;
         self.separation = Vec2::ZERO;
         self.alignment = Vec2::ZERO;
-    }
-
-    fn target_velocity (
-        &self,
-        separation: f32,
-        cohesion: f32,
-        alignment: f32,
-    ) -> Vec2 {
-        let result = self.separation * separation + self.cohesion * cohesion + self.alignment.normalize() * alignment;
-        result.normalize()
+        self.neighbour_count = 0.0;
     }
 }
 
